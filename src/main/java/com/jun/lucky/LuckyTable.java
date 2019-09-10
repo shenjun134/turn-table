@@ -19,32 +19,36 @@ public class LuckyTable extends JFrame {
     private Integer unitW = 200;
     private Integer padding = 10;
     private Integer totalWidth;
+    private String beginLabel;
+    private String endLabel;
     private JButton[] buttons = new JButton[8];
-    private String[] textArr = new String[8];
-    private final int[] position = new int[]{0, 1, 2, 4, 7, 6, 5, 3};
-    private final int[] swapBegin = new int[]{0, 2, 7, 5};
-    private final int[] swapEnd = new int[]{1, 4, 6, 3};
-    private JButton bingo;
 
+    private JButton bingo;
+    private java.util.List<String> choiceAList;
+    private String defaultChoice;
 
     private JButton btnStart;
     private AtomicBoolean startTurn = new AtomicBoolean(false);
     private AtomicBoolean swaping = new AtomicBoolean(false);
     private Thread luckyThread;
 
+    private final int[] position = new int[]{0, 1, 2, 4, 7, 6, 5, 3};
+    private final int[] swapBegin = new int[]{0, 2, 7, 5};
+    private final int[] swapEnd = new int[]{1, 4, 6, 3};
+
     public void init() throws IOException {
         properties.load(new InputStreamReader(Thread.currentThread().getContextClassLoader().getResourceAsStream("lucky.properties"), "GBK"));
         initParam();
         setTitle(properties.getProperty("lucky.title"));
         setSize(totalWidth, totalWidth);
-        setLayout(new FlowLayout(FlowLayout.LEFT, padding, padding));//设置按钮的位置（左对齐）
+        setLayout(new FlowLayout(FlowLayout.LEFT, padding, padding));
         JButton button = null;
         int j = 0;
         for (int i = 0; i < 9; i++) {
-            button = createBtn(textArr[j]);
+            button = createBtn(choiceAList.get(j));
             if (i == 4) {
                 j--;
-                button.setText("开始");
+                button.setText(beginLabel);
                 btnStart = button;
             } else {
                 buttons[j] = button;
@@ -58,7 +62,7 @@ public class LuckyTable extends JFrame {
     }
 
     private void initParam() {
-        String defaultChoice = properties.getProperty("lucky.default.choice");
+        defaultChoice = properties.getProperty("lucky.default.choice");
         if (defaultChoice == null || defaultChoice.length() == 0) {
             throw new IllegalArgumentException("Missing default choice");
         }
@@ -66,27 +70,22 @@ public class LuckyTable extends JFrame {
         if(unitW < 20){
             throw new IllegalArgumentException("Unit width < 20");
         }
+        beginLabel = properties.getProperty("lucky.beginBtn.label");
+        endLabel = properties.getProperty("lucky.endBtn.label");
         totalWidth = unitW * 3 + padding * 4;
-        String shuffleVal = properties.getProperty("lucky.choice.shuffle");
         String choiceList = properties.getProperty("lucky.choice.list");
         String[] array = choiceList.split(",");
-        java.util.List<String> list = new ArrayList<String>();
+        choiceAList = new ArrayList<String>();
         for (String item : array) {
             if (item == null || item.trim().length() == 0) {
                 continue;
             }
-            list.add(item.trim());
+            choiceAList.add(item.trim());
         }
-        if (list.size() < 8) {
-            for (int i = 0; i < 8 - list.size(); i++) {
-                list.add(defaultChoice);
+        if (choiceAList.size() < 8) {
+            for (int i = 0; i < 8 - choiceAList.size(); i++) {
+                choiceAList.add(defaultChoice);
             }
-        }
-        if (Boolean.valueOf(shuffleVal)) {
-            Collections.shuffle(list);
-        }
-        for (int i = 0; i < 8; i++) {
-            textArr[i] = list.get(i);
         }
     }
 
@@ -109,9 +108,10 @@ public class LuckyTable extends JFrame {
             System.out.println("startTurn is running");
             return;
         }
+        randomChoice();
         startTurn.set(true);
         reset();
-        btnStart.setText("停止");
+        btnStart.setText(endLabel);
         luckyThread = new Thread() {
             @Override
             public void run() {
@@ -127,39 +127,65 @@ public class LuckyTable extends JFrame {
 
     private void stopTurn() {
         System.out.println("begin to stopTurn ... ");
-//        while (swaping.get()){
-//            System.out.println("wait to end of swapping");
-//        }
+
         if (startTurn.get()) {
             startTurn.set(false);
-            btnStart.setText("开始");
+            btnStart.setText(beginLabel);
             System.out.println("stop turn done. ");
         } else {
             System.out.println("turn has already stopped.. ");
         }
     }
 
-    private boolean goNormal() {
-        int level1Sleep = getInt("lucky.level-1.sleep");
-        int level1Loop = getInt("lucky.level-1.loop");
-
-        int level2Sleep = getInt("lucky.level-2.sleep");
-        int level2Loop = getInt("lucky.level-2.loop");
-
-        int level3Sleep = getInt("lucky.level-3.sleep");
-        int level3Loop = getInt("lucky.level-3.loop");
-
-        boolean result = goNormal(level1Loop, level1Sleep);
-        if (result) {
-            result = goNormal(level2Loop, level2Sleep);
+    private void randomChoice(){
+        if (getBool("lucky.choice.shuffle")) {
+            Collections.shuffle(choiceAList);
         }
-        if (result) {
-            result = goNormal(level3Loop, level3Sleep);
+        boolean existDef = false;
+        boolean rdBool = randomBool();
+
+        for (int i =0; i< 8; i++) {
+            String choice = choiceAList.get(i);
+            if(!existDef){
+                existDef = defaultChoice.equals(choice);
+            }
+            buttons[i].setText(choice);
+        }
+        if(!existDef && rdBool){
+            int pos = randomInt(7, 0);
+            buttons[pos].setText(defaultChoice);
+        }
+    }
+
+
+    private boolean goNormal() {
+        boolean result = true;
+        for(int i =1; i< 10; i++){
+            try{
+                if(result){
+                    result = goNormal(i);
+                }
+            }catch (IllegalArgumentException e){
+                System.out.println(e.getLocalizedMessage());
+                break;
+            }
         }
         if (result) {
             goSwapLoop();
         }
         return result;
+    }
+
+    private boolean goNormal(int index){
+        String keySleep = String.format("lucky.level-%d.sleep", index);
+        String keyLoop = String.format("lucky.level-%d.loop", index);
+        int level1Sleep = getInt(keySleep);
+        int level1Loop = getInt(keyLoop);
+        if(level1Loop == 0 || level1Sleep == 0){
+            throw new IllegalArgumentException(String.format("Missing %s or %s", keySleep, keyLoop));
+        }
+        System.out.println(String.format("begin to go with loop:%d, wait:%d, index:%d", level1Loop, level1Sleep, index));
+        return goNormal(level1Loop, level1Sleep);
     }
 
     private synchronized void reset() {
@@ -305,11 +331,27 @@ public class LuckyTable extends JFrame {
         return Integer.valueOf(val.trim());
     }
 
+    private boolean getBool(String key){
+        String val = properties.getProperty(key);
+        return Boolean.valueOf(val);
+    }
+
+    private boolean randomBool(){
+        return randomInt(100, 1) > 50;
+    }
+
+    private int randomInt(int max, int min){
+        int rdBegin = (int)(Math.random() * Integer.MAX_VALUE % max);
+        return rdBegin > min ? rdBegin : min;
+
+    }
+
     private void randomBingo() {
         java.util.List<JButton> btnList = new ArrayList<JButton>(Arrays.asList(buttons));
         Collections.shuffle(btnList);
         bingo(btnList.get(0));
     }
+
 
     private void bingo(JButton jButton) {
         try {
@@ -332,6 +374,7 @@ public class LuckyTable extends JFrame {
         } finally {
             activeBtn(jButton);
             bingo = jButton;
+            JOptionPane.showMessageDialog(this, jButton.getText());
         }
 
     }
