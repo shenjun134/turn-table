@@ -1,11 +1,17 @@
 package com.jun.lucky;
 
+import sun.audio.AudioData;
+import sun.audio.AudioPlayer;
+import sun.audio.AudioStream;
+import sun.audio.ContinuousAudioDataStream;
+
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -31,6 +37,11 @@ public class LuckyTable extends JFrame {
     private AtomicBoolean startTurn = new AtomicBoolean(false);
     private AtomicBoolean swaping = new AtomicBoolean(false);
     private Thread luckyThread;
+    private AudioStream as4Background;
+    private AudioStream as4Bingo;
+    private ContinuousAudioDataStream cads4Background;
+    private URL url4Back;
+    private URL url4Bingo;
 
     private final int[] position = new int[]{0, 1, 2, 4, 7, 6, 5, 3};
     private final int[] swapBegin = new int[]{0, 2, 7, 5};
@@ -39,6 +50,7 @@ public class LuckyTable extends JFrame {
     public void init() throws IOException {
         properties.load(new InputStreamReader(Thread.currentThread().getContextClassLoader().getResourceAsStream("lucky.properties"), "GBK"));
         initParam();
+        initMusic();
         setTitle(properties.getProperty("lucky.title"));
         setSize(totalWidth, totalWidth);
         setLayout(new FlowLayout(FlowLayout.LEFT, padding, padding));
@@ -109,6 +121,7 @@ public class LuckyTable extends JFrame {
             return;
         }
         randomChoice();
+        playBackgroundMusic();
         startTurn.set(true);
         reset();
         btnStart.setText(endLabel);
@@ -160,7 +173,8 @@ public class LuckyTable extends JFrame {
 
     private boolean goNormal() {
         boolean result = true;
-        for(int i =1; i< 10; i++){
+        int size = getInt("lucky.level.size");
+        for(int i =1; i <= size; i++){
             try{
                 if(result){
                     result = goNormal(i);
@@ -352,9 +366,79 @@ public class LuckyTable extends JFrame {
         bingo(btnList.get(0));
     }
 
+    private void initMusic(){
+        String backgroundUrl = properties.getProperty("lucky.background.music");
+        String bingoUrl = properties.getProperty("lucky.bingo.music");
+        url4Back = Thread.currentThread().getContextClassLoader().getResource(backgroundUrl);
+        url4Bingo = Thread.currentThread().getContextClassLoader().getResource(bingoUrl);
+        if(url4Back == null){
+            System.out.println("No music found");
+            return;
+        }
+        try {
+            as4Background = new AudioStream(url4Back.openStream());
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void playBackgroundMusic(){
+        System.out.println("begin to playBackgroundMusic");
+        // Create AudioData source.
+        if(cads4Background != null){
+            AudioPlayer.player.start(cads4Background);
+            return;
+        }
+        AudioData data = null;
+        try {
+            data = as4Background.getData();
+        } catch(IOException e) {
+            e.printStackTrace();
+        }
+        // Create ContinuousAudioDataStream.
+        cads4Background = new ContinuousAudioDataStream(data);
+
+        // Play audio.
+        AudioPlayer.player.start(cads4Background);
+    }
+
+    private void playBingo(){
+        if(url4Bingo != null){
+            try {
+                as4Bingo =  new AudioStream(url4Bingo.openStream());
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+        if(as4Bingo != null){
+            Thread thread = new Thread(){
+                @Override
+                public void run() {
+                    AudioPlayer.player.start(as4Bingo);
+                }
+            };
+            thread.start();
+        }
+    }
+
+    private void stopBingo(){
+        if(as4Bingo != null){
+            AudioPlayer.player.stop(as4Bingo);
+        }
+    }
+
+    private void stopBackgroundMusic(){
+        System.out.println("begin to stopBackgroundMusic");
+        if(cads4Background != null) {
+            AudioPlayer.player.stop(cads4Background);
+        }
+    }
+
 
     private void bingo(JButton jButton) {
         try {
+            stopBackgroundMusic();
+            playBingo();
             int times = getInt("lucky.swap.active.times");
             int swapInterval = getInt("lucky.swap.active.interval");
             for (int i = 0; i < times; i++) {
@@ -371,10 +455,13 @@ public class LuckyTable extends JFrame {
                     e.printStackTrace();
                 }
             }
+
+
         } finally {
             activeBtn(jButton);
             bingo = jButton;
             JOptionPane.showMessageDialog(this, jButton.getText());
+            stopBingo();
         }
 
     }
